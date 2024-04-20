@@ -1,0 +1,25 @@
+<!-- templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count}) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Callback Success</title>
+</head>
+<body>
+    <h1>Callback Success</h1>
+    <p>
+        Hello, {{ name }}!
+    </p>
+    <p>
+        Your Twitter username is <strong>{{ user_name }}</strong>.
+    </p>
+    <p>
+        You have <strong>{{ friends_count }}</strong> friends.
+    </p>
+    <p>
+        You have <strong>{{ tweet_count }}</strong> tweets.
+    </p>
+    <p>
+        You have <strong>{{ followers_count }}</strong> followers.
+    </p>
+</html>
