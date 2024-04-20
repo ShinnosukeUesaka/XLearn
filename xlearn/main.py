@@ -1,0 +1,72 @@
+from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+import os
+from urllib import parse
+import tweepy
+from dotenv import load_dotenv
+import oauth2 as oauth  # Ensure this library is compatible with async or use httpx
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+cred = credentials.Certificate("firebase_admin.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+load_dotenv()  # Load environment variables
+
+app = FastAPI()
+
+templates = Jinja2Templates(directory="xlearn/templates")
+app.mount("/static", StaticFiles(directory="xlearn/static"), name="static")
+
+# Assuming you have CLIENT_ID, CLIENT_SECRET, and REDIRECT_URI in your .env file
+oauth2_user_handler = tweepy.OAuth2UserHandler(
+    client_id=os.getenv('CLIENT_ID'),
+    redirect_uri=os.getenv('REDIRECT_URI'),
+    scope=["tweet.read", "users.read", "list.read"],
+    client_secret=os.getenv('CLIENT_SECRET'))
+
+authorize_url = oauth2_user_handler.get_authorization_url()
+state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
+
+
+@app.get("/", response_class=HTMLResponse)
+async def hello(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/start", response_class=HTMLResponse)
+async def start(request: Request):
+    return templates.TemplateResponse("start.html", {"request": request, "authorize_url": authorize_url})
+
+
+@app.get("/callback", response_class=HTMLResponse)
+async def callback(request: Request, state: str = None, code: str = None, error: str = None):
+    if error:
+        return templates.TemplateResponse("error.html", {"request": request, "error_message": "OAuth request was denied by this user"})
+
+    if state != state:
+        return templates.TemplateResponse("error.html", {"request": request, "error_message": "There was a problem authenticating this user"})
+    
+    redirect_uri = os.getenv('REDIRECT_URI')
+    response_url_from_app = '{}?state={}&code={}'.format(redirect_uri, state, code)
+    access_token = await oauth2_user_handler.fetch_token(response_url_from_app)['access_token']
+    client = tweepy.Client(access_token)
+    user = await client.get_me(user_auth=False, user_fields=['public_metrics'], tweet_fields=['author_id'])
+
+    # post tweet 
+    client.create_tweet(text="Hello World!")
+    name = user.data['name']
+    user_name = user.data['username']
+    followers_count = user.data['public_metrics']['followers_count']
+    friends_count = user.data['public_metrics']['following_count']
+    tweet_count = user.data['public_metrics']['tweet_count']
+    
+    return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
