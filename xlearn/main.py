@@ -93,8 +93,21 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     
     return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
 
+@app.get("/materials")
+def get_materials(request: Request):
+    pass
 
-@app.post("")
+@app.post("/import")
+def import_data(request: Request, user_id: str):
+    pass
+
+@app.post("/question")
+def post_question(request: Request, user_id: str):
+    pass
+
+@app.post("/quote")
+def post_quote(request: Request, user_id: str):
+    pass
 
 if __name__ == "__main__":
     import uvicorn
