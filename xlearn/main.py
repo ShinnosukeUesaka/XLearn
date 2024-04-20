@@ -38,7 +38,7 @@ load_dotenv()  # Load environment variables
 app = FastAPI()
 
 templates = Jinja2Templates(directory="xlearn/templates")
-app.mount("/static", StaticFiles(directory="xlearn/static"), name="static")
+#app.mount("/static", StaticFiles(directory="xlearn/static"), name="static")
 
 # Assuming you have CLIENT_ID, CLIENT_SECRET, and REDIRECT_URI in your .env file
 oauth2_user_handler = tweepy.OAuth2UserHandler(
@@ -93,6 +93,8 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     
     return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
 
+
+@app.post("")
 
 if __name__ == "__main__":
     import uvicorn
