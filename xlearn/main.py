@@ -10,8 +10,27 @@ import oauth2 as oauth  # Ensure this library is compatible with async or use ht
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-cred = credentials.Certificate("firebase_admin.json")
-firebase_admin.initialize_app(cred)
+# check if there is firebase_admin.json file in the root directory
+if os.path.isfile("firebase_admin.json"):
+    cred = credentials.Certificate("firebase_admin.json")
+    firebase_admin.initialize_app(cred)
+else:
+    firebase_admin.initialize_app({ \
+    credentials.Certificate({ \
+        "type": "service_account", \
+        "project_id": os.environ.get('FIREBASE_PROJECT_ID'), \
+        "private_key_id": os.environ.get('PRIVATE_KEY_ID'), \
+        "private_key": os.environ.get('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'), \
+        "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'), \
+        "client_id": os.environ.get('CLIENT_ID_FIREBASE'), \
+        "auth_uri": os.environ.get('AUTH_URI'), \
+        "token_uri": os.environ.get('TOKEN_URI'), \
+        "auth_provider_x509_cert_url": os.environ.get('AUTH_PROVIDER_X509_CERT_URL'), \
+        "client_x509_cert_url": os.environ.get('CLIENT_X509_CERT_URL'), \
+        }), 
+    })
+
+
 db = firestore.client()
 
 load_dotenv()  # Load environment variables
