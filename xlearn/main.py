@@ -15,20 +15,20 @@ if os.path.isfile("firebase_admin.json"):
     cred = credentials.Certificate("firebase_admin.json")
     firebase_admin.initialize_app(cred)
 else:
-    firebase_admin.initialize_app({ \
-    credentials.Certificate({ \
-        "type": "service_account", \
-        "project_id": os.environ.get('FIREBASE_PROJECT_ID'), \
-        "private_key_id": os.environ.get('PRIVATE_KEY_ID'), \
-        "private_key": os.environ.get('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'), \
-        "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'), \
-        "client_id": os.environ.get('CLIENT_ID_FIREBASE'), \
-        "auth_uri": os.environ.get('AUTH_URI'), \
-        "token_uri": os.environ.get('TOKEN_URI'), \
-        "auth_provider_x509_cert_url": os.environ.get('AUTH_PROVIDER_X509_CERT_URL'), \
-        "client_x509_cert_url": os.environ.get('CLIENT_X509_CERT_URL'), \
+    firebase_admin.initialize_app(
+        credential=credentials.Certificate({ 
+            "type": "service_account", \
+            "project_id": os.environ.get('FIREBASE_PROJECT_ID'), \
+            "private_key_id": os.environ.get('PRIVATE_KEY_ID'), \
+            "private_key": os.environ.get('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'), \
+            "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'), \
+            "client_id": os.environ.get('CLIENT_ID_FIREBASE'), \
+            "auth_uri": os.environ.get('AUTH_URI'), \
+            "token_uri": os.environ.get('TOKEN_URI'), \
+            "auth_provider_x509_cert_url": os.environ.get('AUTH_PROVIDER_X509_CERT_URL'), \
+            "client_x509_cert_url": os.environ.get('CLIENT_X509_CERT_URL'), \
         }), 
-    })
+    )
 
 
 db = firestore.client()
@@ -74,7 +74,15 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     access_token = await oauth2_user_handler.fetch_token(response_url_from_app)['access_token']
     client = tweepy.Client(access_token)
     user = await client.get_me(user_auth=False, user_fields=['public_metrics'], tweet_fields=['author_id'])
-
+    id = user.data['id']
+    db.collection('users').document(str(id)).set(
+        {
+            'name': user.data['name'],
+            'username': user.data['username'],
+            'access_token': access_token,
+        }
+    )
+    
     # post tweet 
     client.create_tweet(text="Hello World!")
     name = user.data['name']
