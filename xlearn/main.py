@@ -82,7 +82,7 @@ else:
 class QuoteMaterial:
     type: Literal["quote"]
     content: str
-    next_review_time: str
+    next_review_time: datetime
     review_interval_hours: int = 3
     source: str = None
     
@@ -91,7 +91,7 @@ class QuestionMaterial:
     type: Literal["question"]
     question: str
     answer: str
-    next_review_time: str
+    next_review_time: datetime
     review_interval_hours: int = 3
     display_answer: bool = False
     source: str = None
@@ -137,7 +137,7 @@ state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
 
 def handle_review(material_id: str, user_id: str):
     access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
-    material = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
+    material  = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
     material = create_material_from_dict(material)
     post_on_twitter(material, access_token)
     next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
@@ -197,18 +197,14 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     client = tweepy.Client(access_token)
     user = client.get_me(user_auth=False, user_fields=['public_metrics'], tweet_fields=['author_id'])
     id = user.data['id']
-    db.collection('users').document(str(id)).set(
-        {
-            'name': user.data['name'],
-            'username': user.data['username'],
-            'access_token': access_token,
-        }
-    )
-    db.collection('users').document(str(id)).collection('materials').add(
-        {
-            'test': 'Introduction to Python',
-        }
-    )
+    if not db.collection('users').document(str(id)).get().exists:
+        db.collection('users').document(str(id)).set(
+            {
+                'name': user.data['name'],
+                'username': user.data['username'],
+                'access_token': access_token,
+            }
+        )
     
     # post tweet 
     #client.create_tweet(text="Hello World!", user_auth=False)
@@ -232,38 +228,32 @@ def import_data():
 
 @app.post("/question")
 def post_question(question_input: QuestionInput):
-    quote_material = QuoteMaterial(
+    question_material = QuestionMaterial(
         type="question",
         question=question_input.question,
         answer=question_input.answer,
         next_review_time=datetime.now(),
     )
-    document = db.collection('users').document(question_input.user_id).collection('materials').add(
-        asdict(quote_material)
-    )
+    document = db.collection('users').document(question_input.user_id).collection('materials').add(asdict(question_material))[1]
     material_id = document.id
-    access_token = db.collection('users').get().to_dict()['access_token']
-    handle_review(material_id, access_token)
+    handle_review(material_id, question_input.user_id)
 
 @app.post("/quote")
-def post_quote(QuoteInput: QuoteInput):
+def post_quote(quote_input: QuoteInput):
     quoate_material = QuoteMaterial(
         type="quote",
-        content=QuoteInput.content,
-        source=QuoteInput.source,
+        content=quote_input.content,
+        source=quote_input.source,
         next_review_time=datetime.now(),
     )
-    document = db.collection('users').document(QuoteInput.user_id).collection('materials').add(
-        asdict(quoate_material)
-    )
+    document = db.collection('users').document(quote_input.user_id).collection('materials').add(asdict(quoate_material))[1]
     material_id = document.id
-    access_token = db.collection('users').get().to_dict()['access_token']
-    handle_review(material_id, access_token)
+    handle_review(material_id, quote_input.user_id)
 
 
 def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
-    now = datetime.now()
+    now = datetime.now(tz=target_time.tzinfo)
     if target_time < now:
-        target_time += timedelta(days=1)  # Schedule for the next day
+        target_time += timedelta(seconds=1)  # Schedule for next second
     delay = (target_time - now).total_seconds()
     threading.Timer(delay, func, kwargs=kwargs).start()
