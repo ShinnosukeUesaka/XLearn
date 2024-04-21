@@ -250,7 +250,7 @@ def get_materials(user_id: str):
 async def process_data(import_input: ImportInput):
     
     async with httpx.AsyncClient() as client:
-        response = await client.get('https://r.jina.ai/'+request_data.url)
+        response = await client.get('https://r.jina.ai/'+import_input.url)
         print(response.text)
     processed_dict = ai_utils.create_import(response.text, request_data.custom_prompt)
     question = processed_dict['question']
