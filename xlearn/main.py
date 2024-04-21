@@ -12,6 +12,16 @@ from dotenv import load_dotenv
 import oauth2 as oauth  # Ensure this library is compatible with async or use httpx
 import firebase_admin
 from firebase_admin import credentials, firestore
+import xai_sdk
+
+
+client = xai_sdk.Client()
+
+
+def chat(user_prompt: str) -> str:
+    conversation = client.chat.create_conversation()
+    response = conversation.add_response_no_stream(user_input)
+    return response
 
 # check if there is firebase_admin.json file in the root directory
 if os.path.isfile("firebase_admin.json"):
@@ -71,7 +81,7 @@ authorize_url = oauth2_user_handler.get_authorization_url()
 state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def hello(request: Request):
     return {"message": "Hello World"}
 
@@ -91,9 +101,9 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     
     redirect_uri = os.getenv('REDIRECT_URI')
     response_url_from_app = '{}?state={}&code={}'.format(redirect_uri, state, code)
-    access_token = await oauth2_user_handler.fetch_token(response_url_from_app)['access_token']
+    access_token = oauth2_user_handler.fetch_token(response_url_from_app)['access_token']
     client = tweepy.Client(access_token)
-    user = await client.get_me(user_auth=False, user_fields=['public_metrics'], tweet_fields=['author_id'])
+    user = client.get_me(user_auth=False, user_fields=['public_metrics'], tweet_fields=['author_id'])
     id = user.data['id']
     db.collection('users').document(str(id)).set(
         {
@@ -135,5 +145,4 @@ def post_quote(request: Request, user_id: str):
     pass
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    print(chat('Hello World!'))
