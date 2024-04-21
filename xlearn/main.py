@@ -1,3 +1,6 @@
+from typing import Literal
+from dataclasses import dataclass
+
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -31,6 +34,23 @@ else:
     )
 
 
+@dataclass
+class QuoteMaterial:
+    type: Literal["quote"]
+    content: str
+    next_review_time: str
+    source: str = None
+    
+@dataclass
+class QuestionMaterial:
+    type: Literal["question"]
+    question: str
+    answer: str
+    display_answer: bool = False
+    source: str = None
+    
+
+
 db = firestore.client()
 
 load_dotenv()  # Load environment variables
@@ -53,7 +73,7 @@ state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
 
 @app.get("/", response_class=HTMLResponse)
 async def hello(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return {"message": "Hello World"}
 
 
 @app.get("/start", response_class=HTMLResponse)
@@ -80,6 +100,11 @@ async def callback(request: Request, state: str = None, code: str = None, error:
             'name': user.data['name'],
             'username': user.data['username'],
             'access_token': access_token,
+        }
+    )
+    db.collection('users').document(str(id)).collection('materials').add(
+        {
+            'test': 'Introduction to Python',
         }
     )
     
