@@ -17,6 +17,7 @@ import openai
 import threading
 from datetime import datetime, timedelta
 import time
+import pytz
 from pydantic import BaseModel
 
 use_xai_sdk = False
@@ -29,7 +30,7 @@ except:
     
 
 
-
+timezone = pytz.timezone('US/Eastern')
 openai_client = openai.Client()
 
 def chat(user_prompt: str) -> str:
@@ -232,7 +233,7 @@ def post_question(question_input: QuestionInput):
         type="question",
         question=question_input.question,
         answer=question_input.answer,
-        next_review_time=datetime.now(),
+        next_review_time=datetime.now(tz=timezone),
     )
     document = db.collection('users').document(question_input.user_id).collection('materials').add(asdict(question_material))[1]
     material_id = document.id
@@ -244,7 +245,7 @@ def post_quote(quote_input: QuoteInput):
         type="quote",
         content=quote_input.content,
         source=quote_input.source,
-        next_review_time=datetime.now(),
+        next_review_time=datetime.now(tz=timezone),
     )
     document = db.collection('users').document(quote_input.user_id).collection('materials').add(asdict(quoate_material))[1]
     material_id = document.id
@@ -252,7 +253,7 @@ def post_quote(quote_input: QuoteInput):
 
 
 def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
-    now = datetime.now(tz=target_time.tzinfo)
+    now = datetime.now(tz=timezone)
     if target_time < now:
         target_time += timedelta(seconds=1)  # Schedule for next second
     delay = (target_time - now).total_seconds()
