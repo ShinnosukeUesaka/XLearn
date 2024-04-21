@@ -129,7 +129,7 @@ async def authorize(request: Request):
     # redirect to the authorize_url
     return RedirectResponse(url=authorize_url)
 
-@app.get("/callback", response_class=HTMLResponse)
+@app.get("/callback")
 async def callback(request: Request, state: str = None, code: str = None, error: str = None):
     if error:
         return templates.TemplateResponse("error.html", {"request": request, "error_message": "OAuth request was denied by this user"})
@@ -157,14 +157,15 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     )
     
     # post tweet 
-    client.create_tweet(text="Hello World!", user_auth=False)
+    #client.create_tweet(text="Hello World!", user_auth=False)
     name = user.data['name']
     user_name = user.data['username']
     followers_count = user.data['public_metrics']['followers_count']
     friends_count = user.data['public_metrics']['following_count']
     tweet_count = user.data['public_metrics']['tweet_count']
     
-    return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
+    return RedirectResponse(f"https://x-dev-challenge.vercel.app/console?user_id={id}")
+    #return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
 
 @app.get("/materials")
 def get_materials(request: Request):
