@@ -13,14 +13,26 @@ import oauth2 as oauth  # Ensure this library is compatible with async or use ht
 import firebase_admin
 from firebase_admin import credentials, firestore
 import xai_sdk
-
+import requests
+import openai
 
 client = xai_sdk.Client()
-
+openai_client = openai.Client()
 
 def chat(user_prompt: str) -> str:
-    conversation = client.chat.create_conversation()
-    response = conversation.add_response_no_stream(user_prompt)
+    try:
+        conversation = client.chat.create_conversation()
+        response = conversation.add_response_no_stream(user_prompt)
+        response = response.message
+    except Exception as e:
+        print(e)
+        response = openai_client.chat.completions.create(
+            model="gpt-4.5-turbo",
+            messages=[
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        response = response.choices[0].message
     return response
 
 # check if there is firebase_admin.json file in the root directory
@@ -144,8 +156,8 @@ def post_question(request: Request, user_id: str):
 def post_quote(request: Request, user_id: str):
     pass
 
-# if __name__ == "__main__":
-#     print(chat('Hello World!'))
+if __name__ == "__main__":
+    print(chat('Hello World!'))
 
 
 # import threading

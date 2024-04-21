@@ -16,3 +16,4 @@ oauth2
 uvicorn
 python-dotenv
 jinja2
+xai_sdk
