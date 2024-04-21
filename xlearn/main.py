@@ -1,10 +1,13 @@
 from typing import Literal, Callable
 from dataclasses import dataclass, asdict
+import json
 
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
+
 import os
 from urllib import parse
 import tweepy
@@ -94,7 +97,7 @@ class QuestionMaterial:
     answer: str
     next_review_time: datetime
     review_interval_hours: int = 3
-    display_answer: bool = False
+    display_answer_as_reply: bool = False
     source: str = None
     
 def create_material_from_dict(material_dict: dict):
@@ -114,6 +117,7 @@ class QuestionInput(BaseModel):
     user_id: str
     question: str
     answer: str
+    display_answer_as_reply: bool = False
     source: str = None
 
 db = firestore.client()
@@ -121,6 +125,14 @@ db = firestore.client()
 load_dotenv()  # Load environment variables
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 templates = Jinja2Templates(directory="xlearn/templates")
 #app.mount("/static", StaticFiles(directory="xlearn/static"), name="static")
@@ -135,6 +147,7 @@ oauth2_user_handler = tweepy.OAuth2UserHandler(
 authorize_url = oauth2_user_handler.get_authorization_url()
 state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
 
+bearer_token = os.getenv('BEARER_TOKEN')
 
 def handle_review(material_id: str, user_id: str):
     access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
@@ -158,13 +171,15 @@ def post_on_twitter(material: QuoteMaterial | QuestionMaterial, access_token: st
         client.create_tweet(text=content, user_auth=False)
         
     elif isinstance(material, QuestionMaterial):
-        if material.display_answer:
+        if material.display_answer_as_reply:
             content = f"{material.question}"
             response = client.create_tweet(text=content, user_auth=False)
             tweet_id = response.data['id']
             time.sleep(0.1)
             content = f"{material.answer}"
-            client.create_tweet(text=content, user_auth=False, in_reply_to=tweet_id)
+            response = client.create_tweet(text=content, user_auth=False, in_reply_to_tweet_id=tweet_id)
+            tweet_id = response.data['id']
+            client.hide_reply(tweet_id, user_auth=False)
         else:
             content = f"{material.question}"
             client.create_tweet(text=content, user_auth=False)
@@ -233,6 +248,7 @@ def post_question(question_input: QuestionInput):
         type="question",
         question=question_input.question,
         answer=question_input.answer,
+        display_answer_as_reply=question_input.display_answer_as_reply,
         next_review_time=datetime.now(tz=timezone),
     )
     document = db.collection('users').document(question_input.user_id).collection('materials').add(asdict(question_material))[1]
@@ -250,7 +266,8 @@ def post_quote(quote_input: QuoteInput):
     document = db.collection('users').document(quote_input.user_id).collection('materials').add(asdict(quoate_material))[1]
     material_id = document.id
     handle_review(material_id, quote_input.user_id)
-
+    
+    
 
 def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
     now = datetime.now(tz=timezone)
@@ -258,3 +275,86 @@ def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
         target_time += timedelta(seconds=1)  # Schedule for next second
     delay = (target_time - now).total_seconds()
     threading.Timer(delay, func, kwargs=kwargs).start()
+
+def listen_for_replies(tweet_id: str):
+    set_rules(
+        [{
+            "value": f"conversation_id:{tweet_id}",
+            "tag": "replies"
+        }]
+    )
+
+
+def bearer_oauth(r):
+    """
+    Method required by bearer token authentication.
+    """
+
+    r.headers["Authorization"] = f"Bearer {bearer_token}"
+    r.headers["User-Agent"] = "v2FilteredStreamPython"
+    return r
+
+
+def get_rules():
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream/rules", auth=bearer_oauth
+    )
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get rules (HTTP {}): {}".format(response.status_code, response.text)
+        )
+    print(json.dumps(response.json()))
+    return response.json()
+
+def set_rules(rules):
+    # You can adjust the rules if needed
+    payload = {"add": rules}
+    response = requests.post(
+        "https://api.twitter.com/2/tweets/search/stream/rules",
+        auth=bearer_oauth,
+        json=payload,
+    )
+    if response.status_code != 201:
+        raise Exception(
+            "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
+        )
+    print(json.dumps(response.json()))
+
+
+def delete_all_rules(rules):
+    if rules is None or "data" not in rules:
+        return None
+
+    ids = list(map(lambda rule: rule["id"], rules["data"]))
+    payload = {"delete": {"ids": ids}}
+    response = requests.post(
+        "https://api.twitter.com/2/tweets/search/stream/rules",
+        auth=bearer_oauth,
+        json=payload
+    )
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot delete rules (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    print(json.dumps(response.json()))
+
+
+def get_stream(set):
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream", auth=bearer_oauth, stream=True,
+    )
+    print(response.status_code)
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get stream (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    for response_line in response.iter_lines():
+        if response_line:
+            json_response = json.loads(response_line)
+            print(json.dumps(json_response, indent=4, sort_keys=True))
+            
+    
