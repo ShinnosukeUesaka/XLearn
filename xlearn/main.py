@@ -26,9 +26,12 @@ import pytz
 from pydantic import BaseModel
 
 from xlearn import x_streaming
+from xlearn import ai_utils
 
 
 timezone = pytz.timezone('US/Eastern')
+bearer_token = os.environ.get("BEARER_TOKEN")
+
 
 # check if there is firebase_admin.json file in the root directory
 if os.path.isfile("firebase_admin.json"):
@@ -58,6 +61,7 @@ class QuoteMaterial:
     next_review_time: datetime
     review_interval_hours: int = 3
     source: str = None
+    num_reviews: int = 0
     
 @dataclass
 class QuestionMaterial:
@@ -68,6 +72,7 @@ class QuestionMaterial:
     review_interval_hours: int = 3
     display_answer_as_reply: bool = False
     source: str = None
+    num_reviews: int = 0
     
 def create_material_from_dict(material_dict: dict):
     if material_dict['type'] == 'quote':
@@ -88,6 +93,11 @@ class QuestionInput(BaseModel):
     answer: str
     display_answer_as_reply: bool = False
     source: str = None
+
+class ImportInput(BaseModel):
+    user_id: str
+    url: str
+    custom_prompt: str
 
 db = firestore.client()
 
@@ -123,10 +133,15 @@ def handle_review(material_id: str, user_id: str):
     material  = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
     material = create_material_from_dict(material)
     tweet_id = post_on_twitter(material, access_token)
-    #x_streaming.listen_for_replies(tweet_id)
+    
+    if isinstance(material, QuestionMaterial):
+        #listen_and_reply_to_replies(tweet_id, access_token, material)
+        # use threading to make it parallel
+        listen_thread = threading.Thread(target=listen_and_reply_to_replies, args=(tweet_id, access_token, material, material_id, user_id))
+        listen_thread.start()
     
     
-    next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
+    next_review_time = datetime.now(tz=timezone) + timedelta(hours=material.review_interval_hours)
     db.collection('users').document(user_id).collection('materials').document(material_id).update(
         {
             'next_review_time': next_review_time,
@@ -140,7 +155,7 @@ def post_on_twitter(material: QuoteMaterial | QuestionMaterial, access_token: st
     print(access_token)
     client = tweepy.Client(access_token)
     if isinstance(material, QuoteMaterial):
-        content = material.content
+        content = f"{material.content}\n({material.num_reviews} reviews)"
         response = client.create_tweet(text=content, user_auth=False)
         
     elif isinstance(material, QuestionMaterial):
@@ -156,7 +171,7 @@ def post_on_twitter(material: QuoteMaterial | QuestionMaterial, access_token: st
         # else:
         #     content = f"{material.question}"
         #     client.create_tweet(text=content, user_auth=False)
-        content = material.question
+        content = f"{material.question}\n({material.num_reviews} reviews)"
         response = client.create_tweet(text=content, user_auth=False)
     
     return response.data['id']
@@ -263,3 +278,45 @@ def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
         target_time += timedelta(seconds=1)  # Schedule for next second
     delay = (target_time - now).total_seconds()
     threading.Timer(delay, func, kwargs=kwargs).start()
+
+def listen_and_reply_to_replies(tweet_id: str, access_token: str, material: QuestionMaterial, material_id: str, user_id: str):
+    rules =  [{
+            "value": f"in_reply_to_tweet_id:{tweet_id}",
+            "tag": "replies"
+        }] 
+    
+    x_streaming.set_rules(
+        rules
+    )
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream", auth=x_streaming.bearer_oauth, stream=True,
+    )
+    print(response.status_code)
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get stream (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    for response_line in response.iter_lines():
+        if response_line:
+            json_response = json.loads(response_line)
+            tweet_id = json_response['data']['edit_history_tweet_ids'][0]
+            client = tweepy.Client(access_token)
+            tweet_content = client.get_tweet(tweet_id, tweet_fields=['text'])
+            user_answer = tweet_content.data['text']
+            correct, feedback = ai_utils.creat_feedback(material.question, material.answer, user_answer)
+            client.create_tweet(text=feedback, user_auth=False, in_reply_to_tweet_id=tweet_id)
+            time.sleep(0.1)
+            if not correct:
+                db.collection('users').document(user_id).collection('materials').document(material_id).update(
+                    {
+                        'next_review_time': datetime.now(tz=timezone),
+                        'review_interval_hours': 3,
+                        'num_reviews': firestore.Increment(1),
+                    }
+                )
+                handle_review(material_id, user_id)
+            
+            return
+    

@@ -1,17 +1,11 @@
 import requests
 import os
 import json
+import tweepy
 
 bearer_token = os.environ.get("BEARER_TOKEN")
 
-def listen_for_replies(tweet_id: str):
-    set_rules(
-        [{
-            "value": f"in_reply_to_tweet_id:{tweet_id}",
-            "tag": "replies"
-        }]
-    )
-    get_stream()
+
 
 
 def bearer_oauth(r):
@@ -70,7 +64,7 @@ def delete_all_rules(rules):
     print(json.dumps(response.json()))
 
 
-def get_stream(func, **kwargs):
+def get_stream():
     response = requests.get(
         "https://api.twitter.com/2/tweets/search/stream", auth=bearer_oauth, stream=True,
     )
@@ -87,3 +81,4 @@ def get_stream(func, **kwargs):
             print(json.dumps(json_response, indent=4, sort_keys=True))
             
     
+delete_all_rules(get_rules())
