@@ -259,6 +259,7 @@ async def process_data(import_input: ImportInput):
         answer=answer,
         next_review_time=datetime.now(tz=timezone),
     )
+    handle_review(question_material, import_input.user_id)
     db.collection('users').document(import_input.user_id).collection('materials').add(asdict(question_material))
     
 
@@ -354,6 +355,49 @@ def listen_for_mentions(user_id: int):
         if response_line:
             json_response = json.loads(response_line)
             print(json_response)
-
-if __name__ == "__main__":
-    listen_for_mentions(1781920644273479680)
+            tweet_id = json_response['data']['edit_history_tweet_ids'][0]
+            bot_name = db.collection('users').document(user_id).get().to_dict()['username']
+            request_text = json_response['data']['text'].replace(f"@{bot_name}", "")
+            # get thread 
+            parent_tweet = client.get_tweet(tweet_id, expansions=['referenced_tweets.id'])
+            print(parent_tweet)
+            parent_tweet_id = parent_tweet.data['referenced_tweets'][0]['id']
+            parent_tweet_content = client.get_tweet(parent_tweet_id, tweet_fields=['text', 'author_id'])
+            print(parent_tweet_content)
+            author_name = parent_tweet_content.data['author_id']
+            action_dict = ai_utils.create_action(parent_tweet_content.data['text'], request_text)
+            
+            # {
+            #     "type": "add_material" # DO NOT CHANGE HERE
+            #     "question": "replace here with the question you are going to ask",
+            #     "answer": "replace here with the answer to the question",
+            # }
+            # {
+            #     "type": "count_materials" # DO NOT CHANGE HERE, count the number of study materials user has added so far.
+            # } 
+            
+            print(action_dict)
+            if action_dict["action"]['type'] == 'add_material':
+                question = action_dict["action"]['question']
+                answer = action_dict["action"]['answer']
+                question_material = QuestionMaterial(
+                    type="question",
+                    question=question,
+                    answer=answer,
+                    next_review_time=datetime.now(tz=timezone),
+                )
+                document = db.collection('users').document(user_id).collection('materials').add(asdict(question_material))[1]
+                material_id = document.id
+                handle_review(material_id, user_id)
+                tweet_content = f"Question successfully added. \nQuestion: {question}\nAnswer: {answer}"[270]
+                client.create_tweet(text=tweet_content, user_auth=False, in_reply_to_tweet_id=tweet_id)
+            elif action_dict["action"]['type'] == 'count_materials':
+                materials = db.collection('users').document(user_id).collection('materials').stream()
+                count = 0
+                for material in materials:
+                    count += 1
+                tweet_content = f"{action_dict['message_to_user']}\nYou have {count} study materials so far."
+                client.create_tweet(text=tweet_content, user_auth=False, in_reply_to_tweet_id=tweet_id)
+            
+            
+            
