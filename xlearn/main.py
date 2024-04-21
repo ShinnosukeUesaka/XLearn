@@ -259,8 +259,9 @@ async def process_data(import_input: ImportInput):
         answer=answer,
         next_review_time=datetime.now(tz=timezone),
     )
-    handle_review(question_material, import_input.user_id)
-    db.collection('users').document(import_input.user_id).collection('materials').add(asdict(question_material))
+    material_id = db.collection('users').document(import_input.user_id).collection('materials').add(asdict(question_material))[1].id
+    handle_review(material_id, import_input.user_id)
+    
     
 
 @app.post("/question")
@@ -398,6 +399,5 @@ def listen_for_mentions(user_id: int):
                     count += 1
                 tweet_content = f"{action_dict['message_to_user']}\nYou have {count} study materials so far."
                 client.create_tweet(text=tweet_content, user_auth=False, in_reply_to_tweet_id=tweet_id)
-            
             
             
