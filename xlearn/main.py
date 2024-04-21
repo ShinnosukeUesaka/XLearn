@@ -123,7 +123,7 @@ def handle_review(material_id: str, user_id: str):
     material  = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
     material = create_material_from_dict(material)
     tweet_id = post_on_twitter(material, access_token)
-    x_streaming.listen_for_replies(tweet_id)
+    #x_streaming.listen_for_replies(tweet_id)
     
     
     next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
