@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from typing import Literal, Callable
 from dataclasses import dataclass, asdict
 import json
@@ -23,43 +25,10 @@ import time
 import pytz
 from pydantic import BaseModel
 
-use_xai_sdk = False
-try:
-    import xai_sdk
-    use_xai_sdk = True
-    client = xai_sdk.Client()
-except:
-    print("XAI SDK not found. Using OpenAI API instead.")
-    
+import xlearn.x_streaming
 
 
 timezone = pytz.timezone('US/Eastern')
-openai_client = openai.Client()
-
-def chat(user_prompt: str) -> str:
-    if use_xai_sdk:
-        try:
-            conversation = client.chat.create_conversation()
-            response = conversation.add_response_no_stream(user_prompt)
-            response = response.message
-        except Exception as e:
-            print(e)
-            response = openai_client.chat.completions.create(
-                model="gpt-4.5-turbo",
-                messages=[
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            response = response.choices[0].message
-    else:
-        response = openai_client.chat.completions.create(
-            model="gpt-4.5-turbo",
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        response = response.choices[0].message
-    return response
 
 # check if there is firebase_admin.json file in the root directory
 if os.path.isfile("firebase_admin.json"):
@@ -153,6 +122,7 @@ def handle_review(material_id: str, user_id: str):
     access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
     material  = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
     material = create_material_from_dict(material)
+    
     post_on_twitter(material, access_token)
     next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
     db.collection('users').document(user_id).collection('materials').document(material_id).update(
@@ -235,7 +205,13 @@ async def callback(request: Request, state: str = None, code: str = None, error:
 
 @app.get("/materials")
 def get_materials(user_id: str):
-    materials = db.collection('users').document(user_id).collection('materials').get()
+    print(user_id)
+    materials = db.collection('users').document(user_id).collection('materials').stream()
+    user_info = db.collection('users').document(user_id).get().to_dict()
+    print(user_info)
+    print(materials)
+    materials = [material.to_dict() for material in materials]
+    
     return materials
 
 @app.post("/import")
@@ -275,86 +251,3 @@ def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
         target_time += timedelta(seconds=1)  # Schedule for next second
     delay = (target_time - now).total_seconds()
     threading.Timer(delay, func, kwargs=kwargs).start()
-
-def listen_for_replies(tweet_id: str):
-    set_rules(
-        [{
-            "value": f"conversation_id:{tweet_id}",
-            "tag": "replies"
-        }]
-    )
-
-
-def bearer_oauth(r):
-    """
-    Method required by bearer token authentication.
-    """
-
-    r.headers["Authorization"] = f"Bearer {bearer_token}"
-    r.headers["User-Agent"] = "v2FilteredStreamPython"
-    return r
-
-
-def get_rules():
-    response = requests.get(
-        "https://api.twitter.com/2/tweets/search/stream/rules", auth=bearer_oauth
-    )
-    if response.status_code != 200:
-        raise Exception(
-            "Cannot get rules (HTTP {}): {}".format(response.status_code, response.text)
-        )
-    print(json.dumps(response.json()))
-    return response.json()
-
-def set_rules(rules):
-    # You can adjust the rules if needed
-    payload = {"add": rules}
-    response = requests.post(
-        "https://api.twitter.com/2/tweets/search/stream/rules",
-        auth=bearer_oauth,
-        json=payload,
-    )
-    if response.status_code != 201:
-        raise Exception(
-            "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
-        )
-    print(json.dumps(response.json()))
-
-
-def delete_all_rules(rules):
-    if rules is None or "data" not in rules:
-        return None
-
-    ids = list(map(lambda rule: rule["id"], rules["data"]))
-    payload = {"delete": {"ids": ids}}
-    response = requests.post(
-        "https://api.twitter.com/2/tweets/search/stream/rules",
-        auth=bearer_oauth,
-        json=payload
-    )
-    if response.status_code != 200:
-        raise Exception(
-            "Cannot delete rules (HTTP {}): {}".format(
-                response.status_code, response.text
-            )
-        )
-    print(json.dumps(response.json()))
-
-
-def get_stream(set):
-    response = requests.get(
-        "https://api.twitter.com/2/tweets/search/stream", auth=bearer_oauth, stream=True,
-    )
-    print(response.status_code)
-    if response.status_code != 200:
-        raise Exception(
-            "Cannot get stream (HTTP {}): {}".format(
-                response.status_code, response.text
-            )
-        )
-    for response_line in response.iter_lines():
-        if response_line:
-            json_response = json.loads(response_line)
-            print(json.dumps(json_response, indent=4, sort_keys=True))
-            
-    
