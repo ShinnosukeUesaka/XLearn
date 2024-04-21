@@ -245,14 +245,13 @@ def get_materials(user_id: str):
     
     return materials
 
-@
 @app.post("/import")
 async def process_data(import_input: ImportInput):
     
     async with httpx.AsyncClient() as client:
         response = await client.get('https://r.jina.ai/'+import_input.url)
         print(response.text)
-    processed_dict = ai_utils.create_import(response.text, request_data.custom_prompt)
+    processed_dict = ai_utils.create_import(response.text, import_input.custom_prompt)
     question = processed_dict['question']
     answer = processed_dict['answer']
     question_material = QuestionMaterial(
