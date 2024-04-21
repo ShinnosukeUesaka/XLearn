@@ -76,6 +76,8 @@ class QuestionMaterial:
     display_answer_as_reply: bool = False
     source: str = None
     num_reviews: int = 0
+
+# dataclass for imports
     
 def create_material_from_dict(material_dict: dict):
     if material_dict['type'] == 'quote':
@@ -256,7 +258,7 @@ async def process_data(request_data: ImportInput):
             print(response.text)
         processed_data = await create_import(response.text, request_data.custom_prompt)
         print("processed_data", processed_data)
-        return json.loads(processed_data)
+        return json.loads(processed_data) # change to store in firebase
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
