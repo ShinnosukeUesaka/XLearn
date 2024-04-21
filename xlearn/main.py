@@ -1,5 +1,5 @@
-from typing import Literal
-from dataclasses import dataclass
+from typing import Literal, Callable
+from dataclasses import dataclass, asdict
 
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,6 +17,7 @@ import openai
 import threading
 from datetime import datetime, timedelta
 import time
+from pydantic import BaseModel
 
 use_xai_sdk = False
 try:
@@ -82,6 +83,7 @@ class QuoteMaterial:
     type: Literal["quote"]
     content: str
     next_review_time: str
+    review_interval_hours: int = 3
     source: str = None
     
 @dataclass
@@ -90,10 +92,28 @@ class QuestionMaterial:
     question: str
     answer: str
     next_review_time: str
+    review_interval_hours: int = 3
     display_answer: bool = False
     source: str = None
     
+def create_material_from_dict(material_dict: dict):
+    if material_dict['type'] == 'quote':
+        return QuoteMaterial(**material_dict)
+    elif material_dict['type'] == 'question':
+        return QuestionMaterial(**material_dict)
+    else:
+        raise ValueError("Invalid material type")
 
+class QuoteInput(BaseModel):
+    user_id: str
+    content: str
+    source: str = None
+    
+class QuestionInput(BaseModel):
+    user_id: str
+    question: str
+    answer: str
+    source: str = None
 
 db = firestore.client()
 
@@ -113,6 +133,40 @@ oauth2_user_handler = tweepy.OAuth2UserHandler(
 
 authorize_url = oauth2_user_handler.get_authorization_url()
 state = parse.parse_qs(parse.urlparse(authorize_url).query)['state'][0]
+
+
+def handle_review(material_id: str, user_id: str):
+    access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
+    material = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
+    material = create_material_from_dict(material)
+    post_on_twitter(material, access_token)
+    next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
+    db.collection('users').document(user_id).collection('materials').document(material_id).update(
+        {
+            'next_review_time': next_review_time,
+            'review_interval_hours': material.review_interval_hours * 2, # simple spaced repetition algorithm 
+        }
+    )
+    run_at_specific_time(handle_review, next_review_time, material_id=material_id, user_id=user_id)
+    
+
+def post_on_twitter(material: QuoteMaterial | QuestionMaterial, access_token: str):
+    client = tweepy.Client(access_token)
+    if isinstance(material, QuoteMaterial):
+        content = material.content
+        client.create_tweet(text=content, user_auth=False)
+        
+    elif isinstance(material, QuestionMaterial):
+        if material.display_answer:
+            content = f"{material.question}"
+            response = client.create_tweet(text=content, user_auth=False)
+            tweet_id = response.data['id']
+            time.sleep(0.1)
+            content = f"{material.answer}"
+            client.create_tweet(text=content, user_auth=False, in_reply_to=tweet_id)
+        else:
+            content = f"{material.question}"
+            client.create_tweet(text=content, user_auth=False)
 
 
 @app.get("/")
@@ -168,35 +222,48 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     #return templates.TemplateResponse("callback-success.html", {"request": request, "name": name, "user_name": user_name, "friends_count": friends_count, "tweet_count": tweet_count, "followers_count": followers_count})
 
 @app.get("/materials")
-def get_materials(request: Request):
-    pass
+def get_materials(user_id: str):
+    materials = db.collection('users').document(user_id).collection('materials').get()
+    return materials
 
 @app.post("/import")
-def import_data(request: Request, user_id: str):
+def import_data():
     pass
 
 @app.post("/question")
-def post_question(request: Request, user_id: str):
-    pass
+def post_question(question_input: QuestionInput):
+    quote_material = QuoteMaterial(
+        type="question",
+        question=question_input.question,
+        answer=question_input.answer,
+        next_review_time=datetime.now(),
+    )
+    document = db.collection('users').document(question_input.user_id).collection('materials').add(
+        asdict(quote_material)
+    )
+    material_id = document.id
+    access_token = db.collection('users').get().to_dict()['access_token']
+    handle_review(material_id, access_token)
 
 @app.post("/quote")
-def post_quote(request: Request, user_id: str):
-    pass
+def post_quote(QuoteInput: QuoteInput):
+    quoate_material = QuoteMaterial(
+        type="quote",
+        content=QuoteInput.content,
+        source=QuoteInput.source,
+        next_review_time=datetime.now(),
+    )
+    document = db.collection('users').document(QuoteInput.user_id).collection('materials').add(
+        asdict(quoate_material)
+    )
+    material_id = document.id
+    access_token = db.collection('users').get().to_dict()['access_token']
+    handle_review(material_id, access_token)
 
-# if __name__ == "__main__":
-#     print(chat('Hello World!'))
 
-
-def run_at_specific_time(func, hour, minute):
+def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
     now = datetime.now()
-    target_time = datetime(now.year, now.month, now.day, hour, minute)
     if target_time < now:
         target_time += timedelta(days=1)  # Schedule for the next day
     delay = (target_time - now).total_seconds()
-    threading.Timer(delay, func).start()
-
-def my_scheduled_function():
-    print("Function is running.")
-
-# Schedule the function to run at 10:30 AM
-run_at_specific_time(my_scheduled_function, 19, 27)
+    threading.Timer(delay, func, kwargs=kwargs).start()
