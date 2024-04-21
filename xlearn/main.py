@@ -24,6 +24,9 @@ from datetime import datetime, timedelta
 import time
 import pytz
 from pydantic import BaseModel
+from ai_utils import chat, create_import
+import httpx
+import json
 
 from xlearn import x_streaming
 from xlearn import ai_utils
@@ -244,6 +247,18 @@ def get_materials(user_id: str):
 @app.post("/import")
 def import_data():
     pass
+
+@app.post("/import")
+async def process_data(request_data: ImportInput):
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get('https://r.jina.ai/'+request_data.url)
+            print(response.text)
+        processed_data = await create_import(response.text, request_data.custom_prompt)
+        print("processed_data", processed_data)
+        return json.loads(processed_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/question")
 def post_question(question_input: QuestionInput):

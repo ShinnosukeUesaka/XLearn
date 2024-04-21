@@ -71,6 +71,10 @@ Human: HUMAN_PROMPT<|separator|>
 
 AI: AI_STARTER
 """
+async def create_import(response_data, user_prompt):
+    prompt = f"The data from the URL is {response_data}. make a question answer pair in pure JSON format with no '''json''', take into account of this request {user_prompt}"
+    processed_output = chat(prompt)
+    return processed_output
 
 def run_prompt(prompt, ai_starter):
     async def main_async(prompt, ai_starter):
