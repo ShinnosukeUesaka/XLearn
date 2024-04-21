@@ -157,7 +157,7 @@ async def callback(request: Request, state: str = None, code: str = None, error:
     )
     
     # post tweet 
-    client.create_tweet(text="Hello World!")
+    client.create_tweet(text="Hello World!", user_auth=False)
     name = user.data['name']
     user_name = user.data['username']
     followers_count = user.data['public_metrics']['followers_count']
