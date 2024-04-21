@@ -25,7 +25,7 @@ import time
 import pytz
 from pydantic import BaseModel
 
-import xlearn.x_streaming
+from xlearn import x_streaming
 
 
 timezone = pytz.timezone('US/Eastern')
@@ -122,8 +122,10 @@ def handle_review(material_id: str, user_id: str):
     access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
     material  = db.collection('users').document(user_id).collection('materials').document(material_id).get().to_dict()
     material = create_material_from_dict(material)
+    tweet_id = post_on_twitter(material, access_token)
+    x_streaming.listen_for_replies(tweet_id)
     
-    post_on_twitter(material, access_token)
+    
     next_review_time = material.next_review_time + timedelta(hours=material.review_interval_hours)
     db.collection('users').document(user_id).collection('materials').document(material_id).update(
         {
@@ -135,25 +137,29 @@ def handle_review(material_id: str, user_id: str):
     
 
 def post_on_twitter(material: QuoteMaterial | QuestionMaterial, access_token: str):
+    print(access_token)
     client = tweepy.Client(access_token)
     if isinstance(material, QuoteMaterial):
         content = material.content
-        client.create_tweet(text=content, user_auth=False)
+        response = client.create_tweet(text=content, user_auth=False)
         
     elif isinstance(material, QuestionMaterial):
-        if material.display_answer_as_reply:
-            content = f"{material.question}"
-            response = client.create_tweet(text=content, user_auth=False)
-            tweet_id = response.data['id']
-            time.sleep(0.1)
-            content = f"{material.answer}"
-            response = client.create_tweet(text=content, user_auth=False, in_reply_to_tweet_id=tweet_id)
-            tweet_id = response.data['id']
-            client.hide_reply(tweet_id, user_auth=False)
-        else:
-            content = f"{material.question}"
-            client.create_tweet(text=content, user_auth=False)
-
+        # if material.display_answer_as_reply:
+        #     content = f"{material.question}"
+        #     response = client.create_tweet(text=content, user_auth=False)
+        #     tweet_id = response.data['id']
+        #     time.sleep(0.1)
+        #     content = f"{material.answer}"
+        #     response = client.create_tweet(text=content, user_auth=False, in_reply_to_tweet_id=tweet_id)
+        #     tweet_id = response.data['id']
+        #     client.hide_reply(tweet_id, user_auth=False)
+        # else:
+        #     content = f"{material.question}"
+        #     client.create_tweet(text=content, user_auth=False)
+        content = material.question
+        response = client.create_tweet(text=content, user_auth=False)
+    
+    return response.data['id']
 
 @app.get("/")
 async def hello(request: Request):
@@ -188,6 +194,12 @@ async def callback(request: Request, state: str = None, code: str = None, error:
             {
                 'name': user.data['name'],
                 'username': user.data['username'],
+                'access_token': access_token,
+            }
+        )
+    else:
+        db.collection('users').document(str(id)).update(
+            {
                 'access_token': access_token,
             }
         )

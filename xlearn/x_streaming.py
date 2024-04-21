@@ -11,6 +11,7 @@ def listen_for_replies(tweet_id: str):
             "tag": "replies"
         }]
     )
+    get_stream()
 
 
 def bearer_oauth(r):
@@ -69,7 +70,7 @@ def delete_all_rules(rules):
     print(json.dumps(response.json()))
 
 
-def get_stream(set):
+def get_stream(func, **kwargs):
     response = requests.get(
         "https://api.twitter.com/2/tweets/search/stream", auth=bearer_oauth, stream=True,
     )
