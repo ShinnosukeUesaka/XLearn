@@ -89,6 +89,7 @@ class QuestionMaterial:
     type: Literal["question"]
     question: str
     answer: str
+    next_review_time: str
     display_answer: bool = False
     source: str = None
     
@@ -107,7 +108,7 @@ templates = Jinja2Templates(directory="xlearn/templates")
 oauth2_user_handler = tweepy.OAuth2UserHandler(
     client_id=os.getenv('CLIENT_ID'),
     redirect_uri=os.getenv('REDIRECT_URI'),
-    scope=["tweet.read", "users.read", "list.read"],
+    scope=["tweet.read", "users.read", "list.read", "tweet.write"],
     client_secret=os.getenv('CLIENT_SECRET'))
 
 authorize_url = oauth2_user_handler.get_authorization_url()
@@ -197,4 +198,4 @@ def my_scheduled_function():
     print("Function is running.")
 
 # Schedule the function to run at 10:30 AM
-run_at_specific_time(my_scheduled_function, 10, 30)
+run_at_specific_time(my_scheduled_function, 19, 27)
