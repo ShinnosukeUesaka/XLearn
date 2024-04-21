@@ -24,7 +24,6 @@ from datetime import datetime, timedelta
 import time
 import pytz
 from pydantic import BaseModel
-from ai_utils import chat, create_import
 import httpx
 import json
 
@@ -288,8 +287,6 @@ def post_quote(quote_input: QuoteInput):
     material_id = document.id
     handle_review(material_id, quote_input.user_id)
     
-    
-
 def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
     now = datetime.now(tz=timezone)
     if target_time < now:
@@ -335,6 +332,28 @@ def listen_and_reply_to_replies(tweet_id: str, access_token: str, material: Ques
                     }
                 )
                 handle_review(material_id, user_id)
-            
             return
     
+def listen_for_mentions(user_id: int):
+    # get access token
+    access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
+    client = tweepy.Client(access_token)
+    user_name = client.get_me(user_auth=False, user_fields=['username']).data['username']
+    rules =  [{
+            "value": f"@{user_name}",
+            "tag": "mentions"
+    }]
+    x_streaming.set_rules(
+        rules
+    )
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream", auth=x_streaming.bearer_oauth, stream=True,
+    )
+    
+    for response_line in response.iter_lines():
+        if response_line:
+            json_response = json.loads(response_line)
+            print(json_response)
+
+if __name__ == "__main__":
+    listen_for_mentions(1781920644273479680)
