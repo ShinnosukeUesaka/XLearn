@@ -143,6 +143,7 @@ Actions
 }
 """
     prompt = prompt.replace("REQUEST_TWEET_CONTENT", referenec_tweet_content).replace("USER_TWEET_CONTENT", request_tweet_content)
+    print(prompt)
     response = chat_json(prompt)
     return response
 
