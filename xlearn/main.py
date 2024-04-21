@@ -20,7 +20,7 @@ client = xai_sdk.Client()
 
 def chat(user_prompt: str) -> str:
     conversation = client.chat.create_conversation()
-    response = conversation.add_response_no_stream(user_input)
+    response = conversation.add_response_no_stream(user_prompt)
     return response
 
 # check if there is firebase_admin.json file in the root directory
@@ -144,5 +144,24 @@ def post_question(request: Request, user_id: str):
 def post_quote(request: Request, user_id: str):
     pass
 
-if __name__ == "__main__":
-    print(chat('Hello World!'))
+# if __name__ == "__main__":
+#     print(chat('Hello World!'))
+
+
+# import threading
+# from datetime import datetime, timedelta
+# import time
+
+# def run_at_specific_time(func, hour, minute):
+#     now = datetime.now()
+#     target_time = datetime(now.year, now.month, now.day, hour, minute)
+#     if target_time < now:
+#         target_time += timedelta(days=1)  # Schedule for the next day
+#     delay = (target_time - now).total_seconds()
+#     threading.Timer(delay, func).start()
+
+# def my_scheduled_function():
+#     print("Function is running.")
+
+# # Schedule the function to run at 10:30 AM
+# run_at_specific_time(my_scheduled_function, 10, 30)
