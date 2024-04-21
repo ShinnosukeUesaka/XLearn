@@ -78,7 +78,6 @@ class QuestionMaterial:
     num_reviews: int = 0
 
 # dataclass for imports
-    
 def create_material_from_dict(material_dict: dict):
     if material_dict['type'] == 'quote':
         return QuoteMaterial(**material_dict)
@@ -246,21 +245,24 @@ def get_materials(user_id: str):
     
     return materials
 
+@
 @app.post("/import")
-def import_data():
-    pass
-
-@app.post("/import")
-async def process_data(request_data: ImportInput):
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get('https://r.jina.ai/'+request_data.url)
-            print(response.text)
-        processed_data = await create_import(response.text, request_data.custom_prompt)
-        print("processed_data", processed_data)
-        return json.loads(processed_data) # change to store in firebase
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def process_data(import_input: ImportInput):
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get('https://r.jina.ai/'+request_data.url)
+        print(response.text)
+    processed_dict = ai_utils.create_import(response.text, request_data.custom_prompt)
+    question = processed_dict['question']
+    answer = processed_dict['answer']
+    question_material = QuestionMaterial(
+        type="question",
+        question=question,
+        answer=answer,
+        next_review_time=datetime.now(tz=timezone),
+    )
+    db.collection('users').document(import_input.user_id).collection('materials').add(asdict(question_material))
+    
 
 @app.post("/question")
 def post_question(question_input: QuestionInput):
