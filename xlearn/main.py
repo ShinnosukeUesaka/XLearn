@@ -2,7 +2,7 @@ from typing import Literal
 from dataclasses import dataclass
 
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import os
@@ -12,24 +12,41 @@ from dotenv import load_dotenv
 import oauth2 as oauth  # Ensure this library is compatible with async or use httpx
 import firebase_admin
 from firebase_admin import credentials, firestore
-import xai_sdk
 import requests
 import openai
 import threading
 from datetime import datetime, timedelta
 import time
 
+use_xai_sdk = False
+try:
+    import xai_sdk
+    use_xai_sdk = True
+    client = xai_sdk.Client()
+except:
+    print("XAI SDK not found. Using OpenAI API instead.")
+    
 
-client = xai_sdk.Client()
+
+
 openai_client = openai.Client()
 
 def chat(user_prompt: str) -> str:
-    try:
-        conversation = client.chat.create_conversation()
-        response = conversation.add_response_no_stream(user_prompt)
-        response = response.message
-    except Exception as e:
-        print(e)
+    if use_xai_sdk:
+        try:
+            conversation = client.chat.create_conversation()
+            response = conversation.add_response_no_stream(user_prompt)
+            response = response.message
+        except Exception as e:
+            print(e)
+            response = openai_client.chat.completions.create(
+                model="gpt-4.5-turbo",
+                messages=[
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            response = response.choices[0].message
+    else:
         response = openai_client.chat.completions.create(
             model="gpt-4.5-turbo",
             messages=[
@@ -106,6 +123,10 @@ async def hello(request: Request):
 async def start(request: Request):
     return templates.TemplateResponse("start.html", {"request": request, "authorize_url": authorize_url})
 
+@app.get("/authorize")
+async def authorize(request: Request):
+    # redirect to the authorize_url
+    return RedirectResponse(url=authorize_url)
 
 @app.get("/callback", response_class=HTMLResponse)
 async def callback(request: Request, state: str = None, code: str = None, error: str = None):
