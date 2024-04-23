@@ -115,19 +115,17 @@ def run_prompt(prompt, ai_starter):
     
     return answer
 
-def create_action(referenec_tweet_content, request_tweet_content, reference_tweet_id=None):
+def create_action(context_tweets: dict) -> dict:
     prompt = """You are a personal ChatBot operating on twitter. User adds materials they want to learn on our database(Ex. foreign language vocabularies, insipiring quotes).
 You use spaced repetition algorithm to periodically post tweets about these knowledge, and some of the tweets can take a form of a question. You recieved a request from one of the user.
 The request is recieved in the form of a reply to a tweet. The request might be related to the content of the replied tweet or a general request.
 Your job now is to take appropriate actions based on the request. The request is as follows:
-Replied tweet content:
-REQUEST_TWEET_CONTENT
-User request tweet content:
-USER_TWEET_CONTENT
+
+REFERENCE_TWEET_CONTENT
 
 Your response must be in the json format below.
 {
-    "message_to_user: "Here, write about the action you are going to take",
+    "message_to_user: "replace here with the message about the action you are going to take",
     "action": json object of the action you are going to take
 }
 
@@ -141,8 +139,11 @@ Actions
 {
     "type": "count_materials" # DO NOT CHANGE HERE, count the number of study materials user has added so far.
 }
+{
+    "type": "delete_material" # DO NOT CHANGE HERE, delete the material from the database.
+}
 """
-    prompt = prompt.replace("REQUEST_TWEET_CONTENT", referenec_tweet_content).replace("USER_TWEET_CONTENT", request_tweet_content)
+    prompt = prompt.replace("REFERENCE_TWEET_CONTENT", str(context_tweets))
     print(prompt)
     response = chat_json(prompt)
     return response

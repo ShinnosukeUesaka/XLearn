@@ -140,7 +140,7 @@ def handle_review(material_id: str, user_id: str):
     if isinstance(material, QuestionMaterial):
         #listen_and_reply_to_replies(tweet_id, access_token, material)
         # use threading to make it parallel
-        listen_thread = threading.Thread(target=listen_and_reply_to_replies, args=(tweet_id, access_token, material, material_id, user_id))
+        listen_thread = threading.Thread(target=listen_for_replies, args=(tweet_id, access_token, material, material_id, user_id))
         listen_thread.start()
     
     
@@ -296,86 +296,41 @@ def run_at_specific_time(func: Callable, target_time: datetime, **kwargs):
     delay = (target_time - now).total_seconds()
     threading.Timer(delay, func, kwargs=kwargs).start()
 
-def listen_and_reply_to_replies(tweet_id: str, access_token: str, material: QuestionMaterial, material_id: str, user_id: str):
+def listen_for_replies(tweet_id: str, access_token: str, material: QuestionMaterial, material_id: str, user_id: str):
     rules =  [{
             "value": f"in_reply_to_tweet_id:{tweet_id}",
-            "tag": "replies"
+            "tag": f"replies_for_{user_id}"
         }] 
     
     x_streaming.set_rules(
         rules
     )
+    
+   
+def start_listening():
     response = requests.get(
-        "https://api.twitter.com/2/tweets/search/stream", auth=x_streaming.bearer_oauth, stream=True,
+        "https://api.twitter.com/2/tweets/search/stream", auth=x_streaming.bearer_oauth, stream=True, data={'tweet.fields': 'author_id'}
     )
-    print(response.status_code)
-    if response.status_code != 200:
-        raise Exception(
-            "Cannot get stream (HTTP {}): {}".format(
-                response.status_code, response.text
-            )
-        )
+    
     for response_line in response.iter_lines():
-        if response_line:
-            json_response = json.loads(response_line)
-            tweet_id = json_response['data']['edit_history_tweet_ids'][0]
+        json_response = json.loads(response_line)
+        tweet_id = json_response['data']['edit_history_tweet_ids'][0]
+        
+        if 'mentions' in json_response['data']['tag']:
+            user_id = json_response['data']['tag'].split('_')[-1]
+            access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
             client = tweepy.Client(access_token)
-            tweet_content = client.get_tweet(tweet_id, tweet_fields=['text'])
-            user_answer = tweet_content.data['text']
-            correct, feedback = ai_utils.creat_feedback(material.question, material.answer, user_answer)
-            client.create_tweet(text=feedback, user_auth=False, in_reply_to_tweet_id=tweet_id)
-            time.sleep(0.1)
-            if not correct:
-                db.collection('users').document(user_id).collection('materials').document(material_id).update(
-                    {
-                        'next_review_time': datetime.now(tz=timezone),
-                        'review_interval_hours': 3,
-                        'num_reviews': firestore.Increment(1),
-                    }
-                )
-                handle_review(material_id, user_id)
-            return
-    
-def listen_for_mentions(user_id: int):
-    # get access token
-    access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
-    client = tweepy.Client(access_token)
-    user_name = client.get_me(user_auth=False, user_fields=['username']).data['username']
-    rules =  [{
-            "value": f"@{user_name}",
-            "tag": "mentions"
-    }]
-    x_streaming.set_rules(
-        rules
-    )
-    response = requests.get(
-        "https://api.twitter.com/2/tweets/search/stream", auth=x_streaming.bearer_oauth, stream=True,
-    )
-    
-    for response_line in response.iter_lines():
-        if response_line:
-            json_response = json.loads(response_line)
-            print(json_response)
-            tweet_id = json_response['data']['edit_history_tweet_ids'][0]
-            bot_name = db.collection('users').document(user_id).get().to_dict()['username']
-            request_text = json_response['data']['text'].replace(f"@{bot_name}", "")
-            # get thread 
-            parent_tweet = client.get_tweet(tweet_id, expansions=['referenced_tweets.id'])
-            print(parent_tweet)
-            parent_tweet_id = parent_tweet.data['referenced_tweets'][0]['id']
-            parent_tweet_content = client.get_tweet(parent_tweet_id, tweet_fields=['text', 'author_id'])
-            print(parent_tweet_content)
-            author_name = parent_tweet_content.data['author_id']
-            action_dict = ai_utils.create_action(parent_tweet_content.data['text'], request_text)
-            
-            # {
-            #     "type": "add_material" # DO NOT CHANGE HERE
-            #     "question": "replace here with the question you are going to ask",
-            #     "answer": "replace here with the answer to the question",
-            # }
-            # {
-            #     "type": "count_materials" # DO NOT CHANGE HERE, count the number of study materials user has added so far.
-            # } 
+            tweet_content = client.get_tweet(tweet_id, tweet_fields=['text', 'conversation_id'])
+            # search all the tweets by conversation_id
+            conversation_id = tweet_content.data['conversation_id']
+            tweets = client.search_recent_tweets(query=f"conversation_id:{conversation_id}", tweet_fields=['text', 'author_id'])
+            context_tweets = []
+            for tweet in tweets.data:
+                if tweet['author_id'] == user_id:
+                    context_tweets.append({'author': 'bot', 'text': tweet['text']})
+                else:
+                    context_tweets.append({'author': 'user', 'text': tweet['text']})
+            action_dict = ai_utils.create_action(context_tweets)
             
             print(action_dict)
             if action_dict["action"]['type'] == 'add_material':
@@ -390,7 +345,7 @@ def listen_for_mentions(user_id: int):
                 document = db.collection('users').document(user_id).collection('materials').add(asdict(question_material))[1]
                 material_id = document.id
                 handle_review(material_id, user_id)
-                tweet_content = f"Question successfully added. \nQuestion: {question}\nAnswer: {answer}"[270]
+                tweet_content = f"Question successfully added. \nQuestion: {question}\nAnswer: {answer}"[:270]
                 client.create_tweet(text=tweet_content, user_auth=False, in_reply_to_tweet_id=tweet_id)
             elif action_dict["action"]['type'] == 'count_materials':
                 materials = db.collection('users').document(user_id).collection('materials').stream()
@@ -400,4 +355,46 @@ def listen_for_mentions(user_id: int):
                 tweet_content = f"{action_dict['message_to_user']}\nYou have {count} study materials so far."
                 client.create_tweet(text=tweet_content, user_auth=False, in_reply_to_tweet_id=tweet_id)
             
+            elif action_dict["action"]['type'] == 'delete_material':
+                raise NotImplementedError("Delete material action is not implemented yet")
+        
+        elif 'replies' in json_response['data']['tag']:
+            user_id = json_response['data']['tag'].split('_')[-1]
+            access_token = db.collection('users').document(user_id).get().to_dict()['access_token']
+            bot_handle = db.collection('users').document(user_id).get().to_dict()['username']
+            client = tweepy.Client(access_token)
+            tweet_content = client.get_tweet(tweet_id, tweet_fields=['text', 'conversation_id'])
+            # search all the tweets by conversation_id
+            if f'@{bot_handle}' in tweet_content.data['text']:
+                continue
+            user_answer = tweet_content.data['text']
+            correct, feedback = ai_utils.creat_feedback(material.question, material.answer, user_answer)
+            client.create_tweet(text=feedback, user_auth=False, in_reply_to_tweet_id=tweet_id)
+            time.sleep(0.1)
+            if not correct:
+                db.collection('users').document(user_id).collection('materials').document(material_id).update(
+                    {
+                        'next_review_time': datetime.now(tz=timezone),
+                        'review_interval_hours': 3,
+                        'num_reviews': firestore.Increment(1),
+                    }
+                )
+                handle_review(material_id, user_id)
             
+            
+def add_initial_rules():
+    users = db.collection('users').stream()
+    for user in users:
+        user_id = user.id
+        rules =  [{
+            "value": f"from:{user_id}",
+            "tag": f"mentions_for_{user_id}"
+        }]
+        x_streaming.set_rules(
+            rules
+        ) 
+
+if __name__ == "__main__":
+    x_streaming.delete_all_rules(x_streaming.get_rules())
+    add_initial_rules()
+    start_listening()
