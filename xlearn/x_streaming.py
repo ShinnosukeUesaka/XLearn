@@ -30,18 +30,21 @@ def get_rules():
     return response.json()
 
 def set_rules(rules):
-    # You can adjust the rules if needed
-    payload = {"add": rules}
-    response = requests.post(
-        "https://api.twitter.com/2/tweets/search/stream/rules",
-        auth=bearer_oauth,
-        json=payload,
-    )
-    if response.status_code != 201:
-        raise Exception(
-            "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
+    try:
+        # You can adjust the rules if needed
+        payload = {"add": rules}
+        response = requests.post(
+            "https://api.twitter.com/2/tweets/search/stream/rules",
+            auth=bearer_oauth,
+            json=payload,
         )
-    print(json.dumps(response.json()))
+        if response.status_code != 201:
+            raise Exception(
+                "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
+            )
+        print(json.dumps(response.json()))
+    except Exception as e:
+        print(e)
 
 
 def delete_all_rules(rules):
@@ -81,4 +84,3 @@ def get_stream():
             print(json.dumps(json_response, indent=4, sort_keys=True))
             
     
-delete_all_rules(get_rules())

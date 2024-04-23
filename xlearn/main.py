@@ -395,6 +395,14 @@ def add_initial_rules():
         ) 
 
 if __name__ == "__main__":
-    x_streaming.delete_all_rules(x_streaming.get_rules())
+    try:
+        x_streaming.delete_all_rules(x_streaming.get_rules())
+    except Exception as e:
+        print(e)
+        pass
     add_initial_rules()
-    start_listening()
+    try:
+        start_listening()
+    except Exception as e:
+        print(e)
+        pass
